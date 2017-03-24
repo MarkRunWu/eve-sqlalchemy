@@ -116,7 +116,7 @@ class SQL(DataLayer):
                 req.if_modified_since)
             args['spec'].append(updated_filter)
 
-        query = self.driver.session.query(model)
+        query = self.get_query_factory()(self.driver.session, model)
 
         if args['sort']:
             args['sort'] = [parse_sorting(model, *a) for a in args['sort']]
@@ -144,7 +144,7 @@ class SQL(DataLayer):
         else:
             filter_ = self.combine_queries(filter_,
                                            parse_dictionary(lookup, model))
-            query = self.driver.session.query(model)
+            query = self.get_query_factory()(self.driver.session, model)
             document = query.filter(*filter_).first()
 
         return sqla_object_to_dict(document, fields) if document else None
@@ -156,7 +156,8 @@ class SQL(DataLayer):
         lookup = {id_field: _id}
         filter_ = self.combine_queries(filter_,
                                        parse_dictionary(lookup, model))
-        document = self.driver.session.query(model).filter(*filter_).first()
+        document = self.get_query_factory()(self.driver.session, model).\
+            filter(*filter_).first()
         return sqla_object_to_dict(document, fields) if document else None
 
     def find_list_of_ids(self, resource, ids, client_projection=None):
@@ -230,7 +231,7 @@ class SQL(DataLayer):
         id_field = self._id_field(resource)
         filter_ = self.combine_queries(
             filter_, parse_dictionary({id_field: id_}, model))
-        query = self.driver.session.query(model)
+        query = self.get_query_factory()(self.driver.session, model)
 
         # Find and delete the old object
         old_model_instance = query.filter(*filter_).first()
@@ -251,7 +252,7 @@ class SQL(DataLayer):
         id_field = self._id_field(resource)
         filter_ = self.combine_queries(
             filter_, parse_dictionary({id_field: id_}, model))
-        query = self.driver.session.query(model)
+        query = self.get_query_factory()(self.driver.session, model)
         model_instance = query.filter(*filter_).first()
         if model_instance is None:
             abort(500, description=debug_error_message('Object not existent'))
@@ -276,7 +277,7 @@ class SQL(DataLayer):
         lookup = rename_relationship_fields_in_dict(model, lookup)
         filter_ = self.combine_queries(filter_,
                                        parse_dictionary(lookup, model))
-        query = self.driver.session.query(model)
+        query = self.get_query_factory()(self.driver.session, model)
         if len(filter_):
             query = query.filter(*filter_)
         for item in query:
@@ -347,7 +348,7 @@ class SQL(DataLayer):
 
     def is_empty(self, resource):
         model, filter_, _, _ = self.datasource(resource)
-        query = self.driver.session.query(model)
+        query = self.get_query_factory()(self.driver.session, model)
         if len(filter_):
             return query.filter_by(*filter_).count() == 0
         else:
@@ -369,3 +370,10 @@ class SQL(DataLayer):
                     'Unable to parse `embedded` clause'
                 ))
         return client_embedded
+
+    def get_query_factory(self):
+        return getattr(self, 'query_factory', default_query_factory)
+
+
+def default_query_factory(session, model_cls):
+    return session.query(model_cls)
